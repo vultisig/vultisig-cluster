@@ -1,9 +1,10 @@
 .PHONY: help init plan apply destroy cluster-setup deploy-all deploy-infra deploy-services test clean
+.PHONY: deploy-local deploy-production
 .PHONY: local-build local-start local-stop local-status local-logs
 
 TERRAFORM_DIR := infrastructure/terraform
 KUBECONFIG := $(shell pwd)/.kube/config
-DEVCTL := ./local/devctl
+DEVCTL := ./local/devctl.sh
 
 help:
 	@echo "Vultisig Cluster Management"
@@ -25,7 +26,9 @@ help:
 	@echo "  cluster-setup     Install k3s on all nodes"
 	@echo ""
 	@echo "Deployment:"
-	@echo "  deploy-all        Deploy everything (infra + services)"
+	@echo "  deploy-local      Deploy with local Relay + VultiServer"
+	@echo "  deploy-production Deploy using api.vultisig.com endpoints"
+	@echo "  deploy-all        Deploy everything (legacy, use deploy-local)"
 	@echo "  deploy-infra      Deploy infrastructure services only"
 	@echo "  deploy-services   Deploy application services only"
 	@echo "  deploy-monitoring Deploy Prometheus and Grafana"
@@ -63,7 +66,7 @@ cluster-setup:
 # ============== Kubernetes Deployment ==============
 
 deploy-namespaces:
-	kubectl apply -f k8s/namespaces.yaml
+	kubectl apply -f k8s/base/namespaces.yaml
 
 deploy-secrets:
 	@if [ -f k8s/secrets.yaml ]; then \
@@ -76,9 +79,9 @@ deploy-secrets:
 	fi
 
 deploy-infra: deploy-namespaces deploy-secrets
-	kubectl apply -f k8s/infra/postgres/
-	kubectl apply -f k8s/infra/redis/
-	kubectl apply -f k8s/infra/minio/
+	kubectl apply -f k8s/base/infra/postgres/
+	kubectl apply -f k8s/base/infra/redis/
+	kubectl apply -f k8s/base/infra/minio/
 	@echo "Waiting for infrastructure..."
 	kubectl -n infra wait --for=condition=ready pod -l app=postgres --timeout=300s
 	kubectl -n infra wait --for=condition=ready pod -l app=redis --timeout=120s
@@ -86,35 +89,68 @@ deploy-infra: deploy-namespaces deploy-secrets
 	@echo "Infrastructure ready"
 
 deploy-relay:
-	kubectl apply -f k8s/relay/
+	kubectl apply -f k8s/base/relay/
 	kubectl -n relay wait --for=condition=ready pod -l app=relay --timeout=120s
 
 deploy-verifier:
-	kubectl apply -f k8s/verifier/
+	kubectl apply -f k8s/base/verifier/
 	kubectl -n verifier wait --for=condition=ready pod -l app=verifier --timeout=300s
 
 deploy-dca:
-	kubectl apply -f k8s/dca/
+	kubectl apply -f k8s/base/dca/
 	kubectl -n plugin-dca wait --for=condition=ready pod -l app=dca --timeout=300s
 
 deploy-vultiserver:
-	kubectl apply -f k8s/vultiserver/
+	kubectl apply -f k8s/base/vultiserver/
 	kubectl -n vultiserver wait --for=condition=ready pod -l app=vultiserver --timeout=120s
 
 deploy-monitoring:
-	kubectl apply -f k8s/monitoring/prometheus/
-	kubectl apply -f k8s/monitoring/grafana/
+	kubectl apply -f k8s/base/monitoring/prometheus/
+	kubectl apply -f k8s/base/monitoring/grafana/
 	kubectl -n monitoring wait --for=condition=ready pod -l app=prometheus --timeout=120s
 	kubectl -n monitoring wait --for=condition=ready pod -l app=grafana --timeout=120s
 
 deploy-services: deploy-relay deploy-verifier deploy-dca deploy-vultiserver deploy-monitoring
 
 deploy-all: deploy-infra deploy-services
+
+# Kustomize-based deployment (recommended)
+deploy-local: deploy-secrets
+	@echo "Deploying with local Relay + VultiServer..."
+	kubectl apply -k k8s/overlays/local
+	@echo ""
+	@echo "Waiting for pods..."
+	kubectl -n infra wait --for=condition=ready pod -l app=postgres --timeout=300s
+	kubectl -n infra wait --for=condition=ready pod -l app=redis --timeout=120s
+	kubectl -n infra wait --for=condition=ready pod -l app=minio --timeout=120s
+	kubectl -n relay wait --for=condition=ready pod -l app=relay --timeout=120s
+	kubectl -n vultiserver wait --for=condition=ready pod -l app=vultiserver --timeout=120s
+	kubectl -n verifier wait --for=condition=ready pod -l app=verifier --timeout=300s
+	kubectl -n plugin-dca wait --for=condition=ready pod -l app=dca --timeout=300s
 	@echo ""
 	@echo "========================================="
-	@echo "  Deployment Complete!"
+	@echo "  Local Deployment Complete!"
+	@echo "  Relay:       relay.relay.svc.cluster.local"
+	@echo "  VultiServer: vultiserver.vultiserver.svc.cluster.local"
 	@echo "========================================="
+	kubectl get pods --all-namespaces
+
+deploy-production: deploy-secrets
+	@echo "Deploying with production endpoints (api.vultisig.com)..."
+	kubectl apply -k k8s/overlays/production
 	@echo ""
+	@echo "Waiting for pods..."
+	kubectl -n infra wait --for=condition=ready pod -l app=postgres --timeout=300s
+	kubectl -n infra wait --for=condition=ready pod -l app=redis --timeout=120s
+	kubectl -n infra wait --for=condition=ready pod -l app=minio --timeout=120s
+	kubectl -n verifier wait --for=condition=ready pod -l app=verifier --timeout=300s
+	kubectl -n plugin-dca wait --for=condition=ready pod -l app=dca --timeout=300s
+	@echo ""
+	@echo "========================================="
+	@echo "  Production Deployment Complete!"
+	@echo "  Relay:       https://api.vultisig.com/router"
+	@echo "  VultiServer: https://api.vultisig.com"
+	@echo "========================================="
 	kubectl get pods --all-namespaces
 
 # ============== Testing ==============
@@ -181,15 +217,13 @@ clean:
 	rm -f infrastructure/terraform/terraform.tfstate*
 
 # ============== Local Development ==============
-
-# Extract DYLD_LIBRARY_PATH from cluster.yaml (expand ~ to HOME)
-DYLD_PATH := $(shell grep 'dyld_path:' local/cluster.yaml 2>/dev/null | cut -d: -f2 | tr -d ' ' | sed "s|~|$$HOME|g")
-export DYLD_LIBRARY_PATH := $(DYLD_PATH)
+# Note: devctl.sh wrapper auto-sets DYLD_LIBRARY_PATH from cluster.yaml
 
 local-build:
 	@echo "Building devctl..."
 	cd local && go build -o devctl ./cmd/devctl
 	@echo "Built: local/devctl"
+	@echo "Use ./local/devctl.sh (wrapper) or make local-* commands"
 
 local-start: local-build
 	@if [ ! -f local/cluster.yaml ]; then \
@@ -198,18 +232,18 @@ local-start: local-build
 		echo "  cp local/cluster.yaml.example local/cluster.yaml"; \
 		exit 1; \
 	fi
-	DYLD_LIBRARY_PATH="$(DYLD_PATH)" $(DEVCTL) start
+	$(DEVCTL) start
 
 local-stop:
-	@if [ -f $(DEVCTL) ]; then \
-		DYLD_LIBRARY_PATH="$(DYLD_PATH)" $(DEVCTL) stop; \
+	@if [ -f ./local/devctl ]; then \
+		$(DEVCTL) stop; \
 	else \
 		echo "devctl not built. Run: make local-build"; \
 	fi
 
 local-status:
-	@if [ -f $(DEVCTL) ]; then \
-		DYLD_LIBRARY_PATH="$(DYLD_PATH)" $(DEVCTL) status; \
+	@if [ -f ./local/devctl ]; then \
+		$(DEVCTL) status; \
 	else \
 		echo "devctl not built. Run: make local-build"; \
 	fi

@@ -367,12 +367,15 @@ type MinioFile struct {
 }
 
 func listMinioFiles(bucket string) ([]MinioFile, error) {
-	cmd := exec.Command("docker", "run", "--rm", "--network", "devenv_vultisig",
-		"-e", "MC_HOST_minio=http://minioadmin:minioadmin@vultisig-minio:9000",
-		"minio/mc", "ls", "--json", "minio/"+bucket+"/")
+	cmd := exec.Command("docker", "exec", "vultisig-minio",
+		"mc", "ls", "--json", "local/"+bucket+"/")
 
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
+		outputStr := strings.TrimSpace(string(output))
+		if outputStr != "" {
+			return nil, fmt.Errorf("%s", outputStr)
+		}
 		return nil, err
 	}
 

@@ -365,11 +365,10 @@ func checkMinioFileWithRetry(bucket, pluginID, publicKey string, maxRetries int)
 
 func checkMinioFile(bucket, pluginID, publicKey string) (string, string) {
 	fileName := fmt.Sprintf("%s-%s.vult", pluginID, publicKey)
-	cmd := exec.Command("docker", "run", "--rm", "--network", "devenv_vultisig",
-		"-e", "MC_HOST_minio=http://minioadmin:minioadmin@vultisig-minio:9000",
-		"minio/mc", "ls", "--json", "minio/"+bucket+"/"+fileName)
+	cmd := exec.Command("docker", "exec", "vultisig-minio",
+		"mc", "ls", "--json", "local/"+bucket+"/"+fileName)
 
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", ""
 	}

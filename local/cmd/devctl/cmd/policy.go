@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -35,6 +36,9 @@ func NewPolicyCmd() *cobra.Command {
 	cmd.AddCommand(newPolicyDeleteCmd())
 	cmd.AddCommand(newPolicyInfoCmd())
 	cmd.AddCommand(newPolicyHistoryCmd())
+	cmd.AddCommand(newPolicyStatusCmd())
+	cmd.AddCommand(newPolicyTransactionsCmd())
+	cmd.AddCommand(newPolicyTriggerCmd())
 
 	return cmd
 }
@@ -156,13 +160,30 @@ func runPolicyList(pluginID string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	fmt.Printf("Fetching policies for plugin %s...\n\n", pluginID)
+	authHeader, err := GetAuthHeader()
+	if err != nil {
+		return fmt.Errorf("authentication required: %w\n\nRun 'devctl vault import' first", err)
+	}
 
-	url := fmt.Sprintf("%s/plugin/policies/%s", cfg.Verifier, pluginID)
+	vaults, err := ListVaults()
+	if err != nil || len(vaults) == 0 {
+		return fmt.Errorf("no vaults found. Import a vault first: devctl vault import")
+	}
+	publicKey := vaults[0].PublicKeyECDSA
+
+	fmt.Printf("Fetching policies for plugin %s...\n", pluginID)
+	fmt.Printf("  Vault: %s...\n\n", publicKey[:20])
+
+	url := fmt.Sprintf("%s/plugin/policies/%s?public_key=%s", cfg.Verifier, pluginID, publicKey)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader)
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
@@ -171,11 +192,34 @@ func runPolicyList(pluginID string) error {
 
 	body, _ := io.ReadAll(resp.Body)
 
-	var result map[string]interface{}
-	json.Unmarshal(body, &result)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("request failed (%d): %s", resp.StatusCode, string(body))
+	}
 
-	prettyJSON, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(prettyJSON))
+	var policies []map[string]interface{}
+	err = json.Unmarshal(body, &policies)
+	if err != nil {
+		var result map[string]interface{}
+		json.Unmarshal(body, &result)
+		prettyJSON, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(prettyJSON))
+		return nil
+	}
+
+	if len(policies) == 0 {
+		fmt.Println("No policies found for this plugin.")
+		return nil
+	}
+
+	fmt.Printf("Found %d policies:\n\n", len(policies))
+	for i, p := range policies {
+		policyID := p["id"]
+		active := p["active"]
+		createdAt := p["created_at"]
+		fmt.Printf("  %d. Policy ID: %v\n", i+1, policyID)
+		fmt.Printf("     Active: %v\n", active)
+		fmt.Printf("     Created: %v\n\n", createdAt)
+	}
 
 	return nil
 }
@@ -699,4 +743,217 @@ func fillAddressesFromVault(recipeConfig map[string]interface{}, vault *LocalVau
 	}
 
 	return recipeConfig, nil
+}
+
+func newPolicyStatusCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status [policy-id]",
+		Short: "Show policy status including scheduler info",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPolicyStatus(args[0])
+		},
+	}
+	return cmd
+}
+
+func newPolicyTransactionsCmd() *cobra.Command {
+	var limit int
+
+	cmd := &cobra.Command{
+		Use:   "transactions [policy-id]",
+		Short: "Show transactions for a policy",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPolicyTransactions(args[0], limit)
+		},
+	}
+
+	cmd.Flags().IntVarP(&limit, "limit", "n", 10, "Number of transactions to show")
+	return cmd
+}
+
+func newPolicyTriggerCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "trigger [policy-id]",
+		Short: "Manually trigger policy execution (set next_execution = NOW)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPolicyTrigger(args[0])
+		},
+	}
+	return cmd
+}
+
+func runPolicyStatus(policyID string) error {
+	fmt.Printf("Policy Status: %s\n", policyID)
+	fmt.Println(strings.Repeat("=", 50))
+
+	policyActive, policyCreated := checkPolicyInDB(policyID)
+	fmt.Printf("\nPolicy Record:\n")
+	if policyCreated != "" {
+		fmt.Printf("  Active:  %v\n", policyActive)
+		fmt.Printf("  Created: %s\n", policyCreated)
+	} else {
+		fmt.Printf("  ✗ Not found in database\n")
+	}
+
+	nextExec := checkScheduler(policyID)
+	fmt.Printf("\nScheduler:\n")
+	if nextExec != "" {
+		fmt.Printf("  Next Execution: %s\n", nextExec)
+	} else {
+		fmt.Printf("  ✗ Not scheduled (policy may be inactive or one-time completed)\n")
+	}
+
+	fmt.Printf("\nRecent Transactions:\n")
+	txs := getRecentTransactions(policyID, 3)
+	if len(txs) == 0 {
+		fmt.Printf("  No transactions found\n")
+	} else {
+		for _, tx := range txs {
+			fmt.Printf("  • %s | %s | %s\n", tx.Status, tx.TxHash, tx.CreatedAt)
+		}
+	}
+
+	return nil
+}
+
+func runPolicyTransactions(policyID string, limit int) error {
+	fmt.Printf("Transactions for Policy: %s\n", policyID)
+	fmt.Println(strings.Repeat("=", 60))
+
+	txs := getRecentTransactions(policyID, limit)
+	if len(txs) == 0 {
+		fmt.Println("\nNo transactions found for this policy.")
+		fmt.Println("\nPossible reasons:")
+		fmt.Println("  - Policy hasn't executed yet (check scheduler)")
+		fmt.Println("  - Policy is inactive")
+		fmt.Println("  - Scheduler hasn't picked it up (polls every 30s)")
+		return nil
+	}
+
+	fmt.Printf("\nFound %d transactions:\n\n", len(txs))
+	for i, tx := range txs {
+		fmt.Printf("%d. TX Hash: %s\n", i+1, tx.TxHash)
+		fmt.Printf("   Status: %s | On-chain: %s\n", tx.Status, tx.OnChainStatus)
+		fmt.Printf("   Created: %s\n", tx.CreatedAt)
+		if tx.TxHash != "" && tx.TxHash != "<nil>" {
+			fmt.Printf("   Explorer: https://etherscan.io/tx/%s\n", tx.TxHash)
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
+func runPolicyTrigger(policyID string) error {
+	fmt.Printf("Triggering policy: %s\n", policyID)
+
+	cmd := exec.Command("docker", "exec", "vultisig-postgres",
+		"psql", "-U", "vultisig", "-d", "vultisig-dca", "-c",
+		fmt.Sprintf("UPDATE scheduler SET next_execution = NOW() WHERE policy_id = '%s'", policyID))
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to update scheduler: %w\nOutput: %s", err, string(output))
+	}
+
+	result := strings.TrimSpace(string(output))
+	if strings.Contains(result, "UPDATE 0") {
+		fmt.Println("⚠ Policy not found in scheduler table.")
+		fmt.Println("  This might mean:")
+		fmt.Println("  - Policy doesn't exist")
+		fmt.Println("  - Policy is inactive (one-time completed)")
+		fmt.Println("  - Policy hasn't been scheduled yet")
+		return nil
+	}
+
+	fmt.Println("✓ Policy triggered! Scheduler will pick it up within 30 seconds.")
+	fmt.Println("\nMonitor with:")
+	fmt.Println("  devctl policy status " + policyID)
+	fmt.Println("  devctl policy transactions " + policyID)
+
+	return nil
+}
+
+type TxRecord struct {
+	TxHash        string
+	Status        string
+	OnChainStatus string
+	CreatedAt     string
+}
+
+func checkPolicyInDB(policyID string) (bool, string) {
+	cmd := exec.Command("docker", "exec", "vultisig-postgres",
+		"psql", "-U", "vultisig", "-d", "vultisig-verifier", "-t", "-c",
+		fmt.Sprintf("SELECT active, created_at FROM plugin_policies WHERE id = '%s' LIMIT 1", policyID))
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, ""
+	}
+
+	result := strings.TrimSpace(string(output))
+	if result == "" {
+		return false, ""
+	}
+
+	parts := strings.Split(result, "|")
+	if len(parts) < 2 {
+		return false, ""
+	}
+
+	active := strings.TrimSpace(parts[0]) == "t"
+	created := strings.TrimSpace(parts[1])
+	return active, created
+}
+
+func checkScheduler(policyID string) string {
+	cmd := exec.Command("docker", "exec", "vultisig-postgres",
+		"psql", "-U", "vultisig", "-d", "vultisig-dca", "-t", "-c",
+		fmt.Sprintf("SELECT next_execution FROM scheduler WHERE policy_id = '%s' LIMIT 1", policyID))
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(output))
+}
+
+func getRecentTransactions(policyID string, limit int) []TxRecord {
+	cmd := exec.Command("docker", "exec", "vultisig-postgres",
+		"psql", "-U", "vultisig", "-d", "vultisig-dca", "-t", "-c",
+		fmt.Sprintf(`SELECT tx_hash, status, status_onchain, created_at
+			FROM tx_indexer
+			WHERE policy_id = '%s'
+			ORDER BY created_at DESC
+			LIMIT %d`, policyID, limit))
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil
+	}
+
+	var txs []TxRecord
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 4 {
+			continue
+		}
+		txs = append(txs, TxRecord{
+			TxHash:        strings.TrimSpace(parts[0]),
+			Status:        strings.TrimSpace(parts[1]),
+			OnChainStatus: strings.TrimSpace(parts[2]),
+			CreatedAt:     strings.TrimSpace(parts[3]),
+		})
+	}
+
+	return txs
 }

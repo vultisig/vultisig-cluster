@@ -1,12 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# Default: Use local overlay (deploys everything locally)
+# For production endpoints: kubectl apply -k k8s/overlays/production
+
 resources:
-  - namespaces.yaml
-  - infra/
-  - relay/
-  - verifier/
-  - dca/
-  - vultiserver/
-  - monitoring/
-  - ingress/
+  - overlays/local

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: relay-config
+  namespace: plugin-dca
+data:
+  url: "https://api.vultisig.com/router"

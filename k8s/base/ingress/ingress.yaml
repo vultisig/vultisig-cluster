@@ -21,26 +21,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: relay-ingress
-  namespace: relay
-  annotations:
-    kubernetes.io/ingress.class: traefik
-spec:
-  rules:
-    - host: relay.vultisig.local
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: relay
-                port:
-                  number: 8080
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
   name: dca-swap-ingress
   namespace: plugin-dca
   annotations:
@@ -77,26 +57,6 @@ spec:
                 name: server-send
                 port:
                   number: 8083
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: vultiserver-ingress
-  namespace: vultiserver
-  annotations:
-    kubernetes.io/ingress.class: traefik
-spec:
-  rules:
-    - host: vultiserver.vultisig.local
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: vultiserver
-                port:
-                  number: 8080
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Local overlay: Deploy all services locally including Relay and VultiServer
+# Usage: kubectl apply -k k8s/overlays/local
+
+resources:
+  - ../../base
+  - ../../base/relay/
+  - ../../base/vultiserver/
+  - ingress-local.yaml
+
+# No patches needed - base already uses local cluster DNS endpoints:
+#   - relay.relay.svc.cluster.local
+#   - vultiserver.vultiserver.svc.cluster.local
