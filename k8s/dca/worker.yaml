@@ -1,0 +1,160 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: plugin-dca
+  labels:
+    app: dca
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dca
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: dca
+        component: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8088"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/vultisig/app-recurring:latest
+          command: ["/app/worker"]
+          ports:
+            - containerPort: 8088
+              name: metrics
+          env:
+            - name: POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: dsn
+            - name: REDIS_URI
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: uri
+            - name: BLOCKSTORAGE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: host
+            - name: BLOCKSTORAGE_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: region
+            - name: BLOCKSTORAGE_ACCESSKEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: access-key
+            - name: BLOCKSTORAGE_SECRETKEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: secret-key
+            - name: BLOCKSTORAGE_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: bucket
+            - name: VAULTSERVICE_RELAY_SERVER
+              valueFrom:
+                configMapKeyRef:
+                  name: relay-config
+                  key: url
+            - name: VAULTSERVICE_LOCALPARTYPREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-service-config
+                  key: local-party-prefix
+            - name: VAULTSERVICE_ENCRYPTIONSECRET
+              valueFrom:
+                secretKeyRef:
+                  name: encryption
+                  key: secret
+            - name: VERIFIER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: url
+            - name: VERIFIER_PARTYPREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: party-prefix
+            # RPC endpoints
+            - name: RPC_ETHEREUM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: ethereum
+            - name: RPC_ARBITRUM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: arbitrum
+            - name: RPC_AVALANCHE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: avalanche
+            - name: RPC_BSC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: bsc
+            - name: RPC_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: base
+            - name: RPC_OPTIMISM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: optimism
+            - name: RPC_POLYGON_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: polygon
+            - name: RPC_SOLANA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: solana
+            - name: THORCHAIN_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: thorchain
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: plugin-dca
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8088
+      targetPort: 8088
+      name: metrics
+  selector:
+    app: dca
+    component: worker

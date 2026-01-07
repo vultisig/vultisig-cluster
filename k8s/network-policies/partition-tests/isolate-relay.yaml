@@ -1,0 +1,15 @@
+# Isolate relay service - simulates relay unavailability during TSS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-relay
+  namespace: relay
+  labels:
+    partition-test: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app: relay
+  policyTypes:
+    - Ingress
+  ingress: [] # Deny all ingress

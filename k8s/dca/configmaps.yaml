@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dca-config
+  namespace: plugin-dca
+data:
+  log-format: "json"
+  metrics-port: "8088"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minio-config
+  namespace: plugin-dca
+data:
+  host: "http://minio.infra.svc.cluster.local:9000"
+  region: "us-east-1"
+  bucket: "vultisig-dca"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: relay-config
+  namespace: plugin-dca
+data:
+  url: "http://relay.relay.svc.cluster.local:8080"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: verifier-config
+  namespace: plugin-dca
+data:
+  url: "http://verifier.verifier.svc.cluster.local:8080"
+  party-prefix: "verifier"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-service-config
+  namespace: plugin-dca
+data:
+  local-party-prefix: "vultisig-dca-0000"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rpc-config
+  namespace: plugin-dca
+data:
+  xrp: "https://xrplcluster.com"
+  ethereum: "https://ethereum-rpc.publicnode.com"
+  arbitrum: "https://arbitrum-one-rpc.publicnode.com"
+  avalanche: "https://avalanche-c-chain-rpc.publicnode.com"
+  bsc: "https://bsc-rpc.publicnode.com"
+  base: "https://base-rpc.publicnode.com"
+  blast: "https://rpc.blast.io"
+  optimism: "https://optimism-rpc.publicnode.com"
+  polygon: "https://polygon-bor-rpc.publicnode.com"
+  solana: "https://solana-rpc.publicnode.com"
+  litecoin: "https://api.blockchair.com/litecoin"
+  dogecoin: "https://api.blockchair.com/dogecoin"
+  bitcoin: "https://api.blockchair.com/bitcoin"
+  bitcoincash: "https://api.blockchair.com/bitcoin-cash"
+  thorchain: "https://thornode.ninerealms.com"

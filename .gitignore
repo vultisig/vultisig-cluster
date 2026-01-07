@@ -1,0 +1,23 @@
+# Terraform
+infrastructure/terraform/.terraform/
+infrastructure/terraform/*.tfstate
+infrastructure/terraform/*.tfstate.*
+infrastructure/terraform/.terraform.lock.hcl
+infrastructure/terraform/terraform.tfvars
+
+# SSH keys
+.ssh/
+
+# Kubernetes
+.kube/
+k8s/secrets.yaml
+
+# Generated
+setup-env.sh
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

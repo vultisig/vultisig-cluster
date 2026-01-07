@@ -1,0 +1,217 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-swap
+  namespace: plugin-dca
+  labels:
+    app: dca
+    component: server-swap
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dca
+      component: server-swap
+  template:
+    metadata:
+      labels:
+        app: dca
+        component: server-swap
+    spec:
+      containers:
+        - name: server
+          image: ghcr.io/vultisig/app-recurring:latest
+          command: ["/app/server"]
+          ports:
+            - containerPort: 8082
+              name: http
+          env:
+            - name: MODE
+              value: "swap"
+            - name: SERVER_HOST
+              value: "0.0.0.0"
+            - name: SERVER_PORT
+              value: "8082"
+            - name: POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: dsn
+            - name: REDIS_URI
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: uri
+            - name: BLOCKSTORAGE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: host
+            - name: BLOCKSTORAGE_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: region
+            - name: BLOCKSTORAGE_ACCESSKEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: access-key
+            - name: BLOCKSTORAGE_SECRETKEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: secret-key
+            - name: BLOCKSTORAGE_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: bucket
+            - name: SERVER_ENCRYPTIONSECRET
+              valueFrom:
+                secretKeyRef:
+                  name: encryption
+                  key: secret
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-send
+  namespace: plugin-dca
+  labels:
+    app: dca
+    component: server-send
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dca
+      component: server-send
+  template:
+    metadata:
+      labels:
+        app: dca
+        component: server-send
+    spec:
+      containers:
+        - name: server
+          image: ghcr.io/vultisig/app-recurring:latest
+          command: ["/app/server"]
+          ports:
+            - containerPort: 8083
+              name: http
+          env:
+            - name: MODE
+              value: "send"
+            - name: SERVER_HOST
+              value: "0.0.0.0"
+            - name: SERVER_PORT
+              value: "8083"
+            - name: POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: dsn
+            - name: REDIS_URI
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: uri
+            - name: BLOCKSTORAGE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: host
+            - name: BLOCKSTORAGE_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: region
+            - name: BLOCKSTORAGE_ACCESSKEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: access-key
+            - name: BLOCKSTORAGE_SECRETKEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: secret-key
+            - name: BLOCKSTORAGE_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: bucket
+            - name: SERVER_ENCRYPTIONSECRET
+              valueFrom:
+                secretKeyRef:
+                  name: encryption
+                  key: secret
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8083
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8083
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-swap
+  namespace: plugin-dca
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8082
+      targetPort: 8082
+      name: http
+  selector:
+    app: dca
+    component: server-swap
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-send
+  namespace: plugin-dca
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8083
+      targetPort: 8083
+      name: http
+  selector:
+    app: dca
+    component: server-send

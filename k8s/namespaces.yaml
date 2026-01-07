@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: infra
+  labels:
+    name: infra
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: verifier
+  labels:
+    name: verifier
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: plugin-dca
+  labels:
+    name: plugin-dca
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vultiserver
+  labels:
+    name: vultiserver
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: relay
+  labels:
+    name: relay
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring

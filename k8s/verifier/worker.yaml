@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: verifier
+  labels:
+    app: verifier
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: verifier
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: verifier
+        component: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8089"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/vultisig/verifier:latest
+          command: ["/usr/local/bin/worker"]
+          ports:
+            - containerPort: 8089
+              name: metrics
+          env:
+            - name: VAULT_SERVICE_RELAY_SERVER
+              valueFrom:
+                configMapKeyRef:
+                  name: relay-config
+                  key: url
+            - name: VAULT_SERVICE_LOCAL_PARTY_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-service-config
+                  key: local-party-prefix
+            - name: VAULT_SERVICE_ENCRYPTION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: encryption
+                  key: secret
+            - name: VAULT_SERVICE_DO_SETUP_MSG
+              valueFrom:
+                configMapKeyRef:
+                  name: vault-service-config
+                  key: do-setup-msg
+            - name: DATABASE_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: dsn
+            - name: REDIS_URI
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: uri
+            - name: BLOCK_STORAGE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: host
+            - name: BLOCK_STORAGE_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: region
+            - name: BLOCK_STORAGE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: access-key
+            - name: BLOCK_STORAGE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: secret-key
+            - name: BLOCK_STORAGE_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: bucket
+            - name: LOG_FORMAT
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: log-format
+            - name: METRICS_ENABLED
+              value: "true"
+            - name: METRICS_HOST
+              value: "0.0.0.0"
+            - name: METRICS_PORT
+              value: "8089"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: verifier
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8089
+      targetPort: 8089
+      name: metrics
+  selector:
+    app: verifier
+    component: worker

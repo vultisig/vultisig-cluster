@@ -1,0 +1,165 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vultiserver-config
+  namespace: vultiserver
+data:
+  config.yaml: |
+    server:
+      port: "8080"
+      host: "0.0.0.0"
+      vaultsFilePath: "vaults"
+    redis:
+      host: "redis.infra.svc.cluster.local"
+      port: "6379"
+    relay:
+      server: "http://relay.relay.svc.cluster.local:8080"
+    block_storage:
+      host: "http://minio.infra.svc.cluster.local:9000"
+      region: "us-east-1"
+      bucket: "vultiserver"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vultiserver-api
+  namespace: vultiserver
+  labels:
+    app: vultiserver
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vultiserver
+      component: api
+  template:
+    metadata:
+      labels:
+        app: vultiserver
+        component: api
+    spec:
+      containers:
+        - name: vultiserver
+          image: ghcr.io/vultisig/vultiserver:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: password
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: secret-key
+          volumeMounts:
+            - name: config
+              mountPath: /root/config.yaml
+              subPath: config.yaml
+            - name: vaults
+              mountPath: /root/vaults
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: vultiserver-config
+        - name: vaults
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vultiserver-worker
+  namespace: vultiserver
+  labels:
+    app: vultiserver
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vultiserver
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: vultiserver
+        component: worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/vultisig/vultiserver:latest
+          command: ["./main", "worker"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: password
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: secret-key
+          volumeMounts:
+            - name: config
+              mountPath: /root/config.yaml
+              subPath: config.yaml
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+      volumes:
+        - name: config
+          configMap:
+            name: vultiserver-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vultiserver
+  namespace: vultiserver
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  selector:
+    app: vultiserver
+    component: api

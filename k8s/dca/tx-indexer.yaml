@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tx-indexer
+  namespace: plugin-dca
+  labels:
+    app: dca
+    component: tx-indexer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dca
+      component: tx-indexer
+  template:
+    metadata:
+      labels:
+        app: dca
+        component: tx-indexer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8092"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: tx-indexer
+          image: ghcr.io/vultisig/app-recurring:latest
+          command: ["/app/tx_indexer"]
+          ports:
+            - containerPort: 8183
+              name: health
+            - containerPort: 8092
+              name: metrics
+          env:
+            - name: POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: dsn
+            - name: REDIS_URI
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: uri
+            - name: BASE_INTERVAL
+              value: "30s"
+            - name: BASE_ITERATIONTIMEOUT
+              value: "30s"
+            - name: BASE_MARKLOSTAFTER
+              value: "2h"
+            - name: BASE_CONCURRENCY
+              value: "5"
+            - name: HEALTHPORT
+              value: "8183"
+            - name: METRICS_PORT
+              value: "8092"
+            # RPC endpoints
+            - name: RPC_ETHEREUM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: ethereum
+            - name: RPC_ARBITRUM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: arbitrum
+            - name: RPC_AVALANCHE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: avalanche
+            - name: RPC_BSC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: bsc
+            - name: RPC_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: base
+            - name: RPC_OPTIMISM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: optimism
+            - name: RPC_POLYGON_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: polygon
+            - name: RPC_SOLANA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: solana
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8183
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8183
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tx-indexer
+  namespace: plugin-dca
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8183
+      targetPort: 8183
+      name: health
+    - port: 8092
+      targetPort: 8092
+      name: metrics
+  selector:
+    app: dca
+    component: tx-indexer

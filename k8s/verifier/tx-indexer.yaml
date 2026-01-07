@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tx-indexer
+  namespace: verifier
+  labels:
+    app: verifier
+    component: tx-indexer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: verifier
+      component: tx-indexer
+  template:
+    metadata:
+      labels:
+        app: verifier
+        component: tx-indexer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8088"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: tx-indexer
+          image: ghcr.io/vultisig/verifier:latest
+          command: ["/usr/local/bin/tx_indexer"]
+          ports:
+            - containerPort: 8088
+              name: metrics
+          env:
+            - name: DATABASE_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: dsn
+            - name: REDIS_URI
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: uri
+            - name: LOG_FORMAT
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: log-format
+            - name: METRICS_ENABLED
+              value: "true"
+            - name: METRICS_HOST
+              value: "0.0.0.0"
+            - name: METRICS_PORT
+              value: "8088"
+            - name: INTERVAL
+              value: "10s"
+            - name: ITERATION_TIMEOUT
+              value: "3m"
+            - name: MARK_LOST_AFTER
+              value: "3h"
+            - name: CONCURRENCY
+              value: "50"
+            # RPC endpoints
+            - name: RPC_XRP_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: xrp
+            - name: RPC_ETHEREUM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: ethereum
+            - name: RPC_ARBITRUM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: arbitrum
+            - name: RPC_AVALANCHE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: avalanche
+            - name: RPC_BSC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: bsc
+            - name: RPC_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: base
+            - name: RPC_BLAST_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: blast
+            - name: RPC_OPTIMISM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: optimism
+            - name: RPC_POLYGON_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: polygon
+            - name: RPC_SOLANA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: solana
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tx-indexer
+  namespace: verifier
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8088
+      targetPort: 8088
+      name: metrics
+  selector:
+    app: verifier
+    component: tx-indexer

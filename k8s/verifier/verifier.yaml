@@ -1,0 +1,153 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verifier
+  namespace: verifier
+  labels:
+    app: verifier
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: verifier
+      component: api
+  template:
+    metadata:
+      labels:
+        app: verifier
+        component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8088"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: verifier
+          image: ghcr.io/vultisig/verifier:latest
+          command: ["/usr/local/bin/verifier"]
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 8088
+              name: metrics
+          env:
+            - name: SERVER_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: server-host
+            - name: SERVER_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: server-port
+            - name: SERVER_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt
+                  key: secret
+            - name: DATABASE_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: dsn
+            - name: REDIS_URI
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: uri
+            - name: BLOCK_STORAGE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: host
+            - name: BLOCK_STORAGE_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: region
+            - name: BLOCK_STORAGE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: access-key
+            - name: BLOCK_STORAGE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: minio
+                  key: secret-key
+            - name: BLOCK_STORAGE_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: minio-config
+                  key: bucket
+            - name: ENCRYPTION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: encryption
+                  key: secret
+            - name: LOG_FORMAT
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: log-format
+            - name: AUTH_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: auth-enabled
+            - name: AUTH_NONCE_EXPIRY_MINUTES
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: auth-nonce-expiry
+            - name: METRICS_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: metrics-enabled
+            - name: METRICS_HOST
+              value: "0.0.0.0"
+            - name: METRICS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: verifier-config
+                  key: metrics-port
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: verifier
+  namespace: verifier
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+    - port: 8088
+      targetPort: 8088
+      name: metrics
+  selector:
+    app: verifier
+    component: api
