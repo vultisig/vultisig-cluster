@@ -5,6 +5,46 @@ Development and testing environment for Vultisig services. Supports two modes:
 1. **Local Development** - Docker-based, runs services from source code
 2. **Kubernetes Cluster** - Multi-region k3s on Hetzner Cloud for network testing
 
+## Prerequisites
+
+- **Go 1.23+** - https://go.dev/dl/
+- **Docker** - https://docs.docker.com/get-docker/
+- **Docker Compose** - Usually included with Docker Desktop
+
+## Dependencies
+
+Clone all required repositories into the same parent directory:
+
+```bash
+mkdir -p ~/dev/vultisig && cd ~/dev/vultisig
+
+# This repo
+git clone https://github.com/vultisig/vultisig-cluster.git
+
+# Required dependencies
+git clone https://github.com/vultisig/verifier.git
+git clone https://github.com/vultisig/app-recurring.git
+git clone https://github.com/vultisig/go-wrappers.git
+```
+
+### Building go-wrappers (DKLS library)
+
+The go-wrappers repo contains the native DKLS cryptographic library required for TSS operations:
+
+```bash
+cd ~/dev/vultisig/go-wrappers
+
+# macOS
+./build_darwin.sh
+
+# Linux
+./build_linux.sh
+```
+
+This creates the native library in `includes/darwin/` (macOS) or `includes/linux/` (Linux).
+
+**Note:** The library path must be configured in `local/cluster.yaml` under `library.dyld_path`.
+
 ## Quick Reference
 
 | Goal | Command |
@@ -24,15 +64,26 @@ Runs services locally from source code with Docker for infrastructure (Postgres,
 ```bash
 # 1. Configure paths to your local repos
 cp local/cluster.yaml.example local/cluster.yaml
-# Edit cluster.yaml with your repo paths
+# Edit cluster.yaml with your repo paths (adjust ~/dev/vultisig to your location)
 
 # 2. Configure vault credentials (for testing)
 cp local/vault.env.example local/vault.env
-# Edit vault.env with your test vault path/password
+# Edit vault.env with:
+#   VAULT_PATH=/path/to/your/vault-backup.vult
+#   VAULT_PASSWORD=your-password
 
 # 3. Start everything
 make local-start
 ```
+
+### Vault Requirement
+
+You need a **Fast Vault** (vault with cloud backup) exported from the Vultisig mobile app:
+
+1. Create a vault in the Vultisig mobile app with "Fast Vault" enabled
+2. Export the vault backup (Settings → Export → Backup file)
+3. Transfer the `.vult` file to your development machine
+4. Configure the path in `local/vault.env`
 
 ### Service Modes
 
