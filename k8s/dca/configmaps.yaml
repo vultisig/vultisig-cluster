@@ -63,3 +63,12 @@ data:
   bitcoin: "https://api.blockchair.com/bitcoin"
   bitcoincash: "https://api.blockchair.com/bitcoin-cash"
   thorchain: "https://thornode.ninerealms.com"
+  mayachain: "https://mayanode.mayachain.info"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: swap-providers-config
+  namespace: plugin-dca
+data:
+  oneinch-baseurl: "https://api.1inch.dev/swap/v6.0"

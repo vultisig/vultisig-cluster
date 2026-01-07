@@ -80,6 +80,8 @@ spec:
                 secretKeyRef:
                   name: encryption
                   key: secret
+            - name: VAULTSERVICE_DOSETUPMSG
+              value: "true"
             - name: VERIFIER_URL
               valueFrom:
                 configMapKeyRef:
@@ -148,6 +150,32 @@ spec:
                 configMapKeyRef:
                   name: rpc-config
                   key: thorchain
+            - name: MAYACHAIN_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: mayachain
+            - name: ONEINCH_BASEURL
+              valueFrom:
+                configMapKeyRef:
+                  name: swap-providers-config
+                  key: oneinch-baseurl
+            # Additional RPC endpoints
+            - name: RPC_BLAST_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: blast
+            - name: RPC_BITCOIN_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: bitcoin
+            - name: RPC_XRP_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: xrp
           resources:
             requests:
               memory: "256Mi"

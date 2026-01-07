@@ -90,6 +90,11 @@ spec:
                 configMapKeyRef:
                   name: rpc-config
                   key: solana
+            - name: BASE_RPC_BLAST_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rpc-config
+                  key: blast
             - name: BASE_RPC_BITCOIN_URL
               valueFrom:
                 configMapKeyRef:

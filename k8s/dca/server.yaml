@@ -28,6 +28,8 @@ spec:
           env:
             - name: MODE
               value: "swap"
+            - name: TASK_QUEUE_NAME
+              value: "dca_plugin_queue"
             - name: SERVER_HOST
               value: "0.0.0.0"
             - name: SERVER_PORT
@@ -122,6 +124,8 @@ spec:
           env:
             - name: MODE
               value: "send"
+            - name: TASK_QUEUE_NAME
+              value: "dca_plugin_queue"
             - name: SERVER_HOST
               value: "0.0.0.0"
             - name: SERVER_PORT
