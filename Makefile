@@ -1,10 +1,10 @@
 .PHONY: help init plan apply destroy cluster-setup deploy-all deploy-infra deploy-services test clean
-.PHONY: deploy-local deploy-production
+.PHONY: deploy-k8s deploy-k8s-prod
 .PHONY: local-build local-start local-stop local-status local-logs
 
 TERRAFORM_DIR := infrastructure/terraform
 KUBECONFIG := $(shell pwd)/.kube/config
-DEVCTL := ./local/devctl.sh
+VCLI := ./local/vcli.sh
 
 help:
 	@echo "Vultisig Cluster Management"
@@ -25,10 +25,10 @@ help:
 	@echo "Cluster Setup:"
 	@echo "  cluster-setup     Install k3s on all nodes"
 	@echo ""
-	@echo "Deployment:"
-	@echo "  deploy-local      Deploy with local Relay + VultiServer"
-	@echo "  deploy-production Deploy using api.vultisig.com endpoints"
-	@echo "  deploy-all        Deploy everything (legacy, use deploy-local)"
+	@echo "K8s Deployment:"
+	@echo "  deploy-k8s        Deploy K8s with custom Relay + VultiServer"
+	@echo "  deploy-k8s-prod   Deploy K8s using api.vultisig.com endpoints"
+	@echo "  deploy-all        Deploy everything (legacy)"
 	@echo "  deploy-infra      Deploy infrastructure services only"
 	@echo "  deploy-services   Deploy application services only"
 	@echo "  deploy-monitoring Deploy Prometheus and Grafana"
@@ -114,9 +114,9 @@ deploy-services: deploy-relay deploy-verifier deploy-dca deploy-vultiserver depl
 
 deploy-all: deploy-infra deploy-services
 
-# Kustomize-based deployment (recommended)
-deploy-local: deploy-secrets
-	@echo "Deploying with local Relay + VultiServer..."
+# Kustomize-based K8s deployment
+deploy-k8s: deploy-secrets
+	@echo "Deploying K8s with custom Relay + VultiServer..."
 	kubectl apply -k k8s/overlays/local
 	@echo ""
 	@echo "Waiting for pods..."
@@ -129,14 +129,14 @@ deploy-local: deploy-secrets
 	kubectl -n plugin-dca wait --for=condition=ready pod -l app=dca --timeout=300s
 	@echo ""
 	@echo "========================================="
-	@echo "  Local Deployment Complete!"
+	@echo "  K8s Deployment Complete!"
 	@echo "  Relay:       relay.relay.svc.cluster.local"
 	@echo "  VultiServer: vultiserver.vultiserver.svc.cluster.local"
 	@echo "========================================="
 	kubectl get pods --all-namespaces
 
-deploy-production: deploy-secrets
-	@echo "Deploying with production endpoints (api.vultisig.com)..."
+deploy-k8s-prod: deploy-secrets
+	@echo "Deploying K8s with production endpoints (api.vultisig.com)..."
 	kubectl apply -k k8s/overlays/production
 	@echo ""
 	@echo "Waiting for pods..."
@@ -147,7 +147,7 @@ deploy-production: deploy-secrets
 	kubectl -n plugin-dca wait --for=condition=ready pod -l app=dca --timeout=300s
 	@echo ""
 	@echo "========================================="
-	@echo "  Production Deployment Complete!"
+	@echo "  K8s Production Deployment Complete!"
 	@echo "  Relay:       https://api.vultisig.com/router"
 	@echo "  VultiServer: https://api.vultisig.com"
 	@echo "========================================="
@@ -217,13 +217,13 @@ clean:
 	rm -f infrastructure/terraform/terraform.tfstate*
 
 # ============== Local Development ==============
-# Note: devctl.sh wrapper auto-sets DYLD_LIBRARY_PATH from cluster.yaml
+# Note: vcli.sh wrapper auto-sets DYLD_LIBRARY_PATH from cluster.yaml
 
 local-build:
-	@echo "Building devctl..."
-	cd local && go build -o devctl ./cmd/devctl
-	@echo "Built: local/devctl"
-	@echo "Use ./local/devctl.sh (wrapper) or make local-* commands"
+	@echo "Building vcli..."
+	cd local && go build -o vcli ./cmd/devctl
+	@echo "Built: local/vcli"
+	@echo "Use ./local/vcli.sh (wrapper) or make local-* commands"
 
 local-start: local-build
 	@if [ ! -f local/cluster.yaml ]; then \
@@ -232,20 +232,20 @@ local-start: local-build
 		echo "  cp local/cluster.yaml.example local/cluster.yaml"; \
 		exit 1; \
 	fi
-	$(DEVCTL) start
+	$(VCLI) start
 
 local-stop:
-	@if [ -f ./local/devctl ]; then \
-		$(DEVCTL) stop; \
+	@if [ -f ./local/vcli ]; then \
+		$(VCLI) stop; \
 	else \
-		echo "devctl not built. Run: make local-build"; \
+		echo "vcli not built. Run: make local-build"; \
 	fi
 
 local-status:
-	@if [ -f ./local/devctl ]; then \
-		$(DEVCTL) status; \
+	@if [ -f ./local/vcli ]; then \
+		$(VCLI) status; \
 	else \
-		echo "devctl not built. Run: make local-build"; \
+		echo "vcli not built. Run: make local-build"; \
 	fi
 
 local-logs:
@@ -258,6 +258,6 @@ local-logs:
 	@echo "=== DCA Worker ===" && tail -20 /tmp/dca-worker.log 2>/dev/null || echo "(not running)"
 
 local-clean:
-	rm -f local/devctl
+	rm -f local/vcli
 	rm -f local/cluster.yaml
 	docker compose -f local/configs/docker-compose.yaml down -v 2>/dev/null || true

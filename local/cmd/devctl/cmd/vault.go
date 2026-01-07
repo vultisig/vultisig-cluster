@@ -1213,41 +1213,44 @@ func runVaultDetails(chainFilter string) error {
 	}
 	fmt.Println()
 
-	for _, c := range supportedChains {
-		if chainFilter != "" && !strings.EqualFold(c.Name, chainFilter) && !strings.EqualFold(string(c.Chain), chainFilter) {
-			continue
-		}
+	// Get EVM address (same for all EVM chains)
+	evmAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.Ethereum)
+	if err != nil {
+		return fmt.Errorf("derive EVM address: %w", err)
+	}
 
-		addr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, c.Chain)
-		if err != nil {
-			continue
-		}
-
+	// EVM Chains section - consolidated
+	if chainFilter == "" || isEVMChain(chainFilter) {
 		fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
-		fmt.Printf("│ %s\n", c.Name)
+		fmt.Printf("│ EVM CHAINS                                                      │\n")
 		fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
-		fmt.Printf("│ Address: %s\n", addr)
+		fmt.Printf("│ Address: %s\n", evmAddr)
 		fmt.Printf("│\n")
 
-		// Native balance
-		balance, err := getEVMBalance(c.RPCURL, addr)
-		if err != nil {
-			fmt.Printf("│ %s: error fetching balance\n", c.Symbol)
-		} else {
-			balanceFloat := formatBalance(balance, c.Decimals)
-			fmt.Printf("│ %s (native): %s\n", c.Symbol, balanceFloat)
-		}
+		for _, c := range supportedChains {
+			if chainFilter != "" && !strings.EqualFold(c.Name, chainFilter) && !strings.EqualFold(string(c.Chain), chainFilter) {
+				continue
+			}
 
-		// Token balances (only for Ethereum mainnet for now)
-		if c.Chain == common.Ethereum {
-			for _, token := range ethereumTokens {
-				tokenBalance, err := getERC20Balance(c.RPCURL, token.Address, addr)
-				if err != nil {
-					continue
-				}
-				if tokenBalance.Cmp(big.NewInt(0)) > 0 {
-					balanceFloat := formatBalance(tokenBalance, token.Decimals)
-					fmt.Printf("│ %s: %s\n", token.Symbol, balanceFloat)
+			balance, err := getEVMBalance(c.RPCURL, evmAddr)
+			if err != nil {
+				fmt.Printf("│ %-12s %s: error\n", c.Name+":", c.Symbol)
+			} else {
+				balanceFloat := formatBalance(balance, c.Decimals)
+				fmt.Printf("│ %-12s %s: %s\n", c.Name+":", c.Symbol, balanceFloat)
+			}
+
+			// Token balances for Ethereum mainnet
+			if c.Chain == common.Ethereum {
+				for _, token := range ethereumTokens {
+					tokenBalance, err := getERC20Balance(c.RPCURL, token.Address, evmAddr)
+					if err != nil {
+						continue
+					}
+					if tokenBalance.Cmp(big.NewInt(0)) > 0 {
+						balanceFloat := formatBalance(tokenBalance, token.Decimals)
+						fmt.Printf("│ %-12s %s: %s\n", "", token.Symbol, balanceFloat)
+					}
 				}
 			}
 		}
@@ -1256,7 +1259,145 @@ func runVaultDetails(chainFilter string) error {
 		fmt.Println()
 	}
 
+	// Bitcoin
+	if chainFilter == "" || strings.EqualFold(chainFilter, "bitcoin") || strings.EqualFold(chainFilter, "btc") {
+		btcAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.Bitcoin)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ Bitcoin                                                         │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", btcAddr)
+			fmt.Printf("│ BTC: (use explorer to check balance)\n")
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// THORChain
+	if chainFilter == "" || strings.EqualFold(chainFilter, "thorchain") || strings.EqualFold(chainFilter, "rune") {
+		thorAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.THORChain)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ THORChain                                                       │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", thorAddr)
+			fmt.Printf("│ RUNE: (use explorer to check balance)\n")
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// Maya
+	if chainFilter == "" || strings.EqualFold(chainFilter, "maya") || strings.EqualFold(chainFilter, "cacao") {
+		mayaAddr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, common.MayaChain)
+		if err == nil {
+			fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+			fmt.Printf("│ MayaChain                                                       │\n")
+			fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+			fmt.Printf("│ Address: %s\n", mayaAddr)
+			fmt.Printf("│ CACAO: (use explorer to check balance)\n")
+			fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+			fmt.Println()
+		}
+	}
+
+	// Cosmos chains
+	cosmosChains := []struct {
+		name   string
+		chain  common.Chain
+		symbol string
+	}{
+		{"Cosmos Hub", common.GaiaChain, "ATOM"},
+		{"Osmosis", common.Osmosis, "OSMO"},
+		{"Dydx", common.Dydx, "DYDX"},
+		{"Kujira", common.Kujira, "KUJI"},
+	}
+
+	for _, cc := range cosmosChains {
+		if chainFilter == "" || strings.EqualFold(chainFilter, cc.name) || strings.EqualFold(chainFilter, cc.symbol) {
+			addr, _, _, err := address.GetAddress(vault.PublicKeyECDSA, vault.HexChainCode, cc.chain)
+			if err == nil {
+				fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+				fmt.Printf("│ %s\n", cc.name)
+				fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+				fmt.Printf("│ Address: %s\n", addr)
+				fmt.Printf("│ %s: (use explorer to check balance)\n", cc.symbol)
+				fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+				fmt.Println()
+			}
+		}
+	}
+
+	// Solana (EdDSA)
+	if vault.PublicKeyEdDSA != "" {
+		if chainFilter == "" || strings.EqualFold(chainFilter, "solana") || strings.EqualFold(chainFilter, "sol") {
+			solAddr, _, _, err := address.GetAddress(vault.PublicKeyEdDSA, vault.HexChainCode, common.Solana)
+			if err == nil {
+				fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+				fmt.Printf("│ Solana (EdDSA)                                                  │\n")
+				fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+				fmt.Printf("│ Address: %s\n", solAddr)
+				fmt.Printf("│ SOL: (use explorer to check balance)\n")
+				fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+				fmt.Println()
+			}
+		}
+
+		// Sui
+		if chainFilter == "" || strings.EqualFold(chainFilter, "sui") {
+			suiAddr, _, _, err := address.GetAddress(vault.PublicKeyEdDSA, vault.HexChainCode, common.Sui)
+			if err == nil {
+				fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+				fmt.Printf("│ Sui (EdDSA)                                                     │\n")
+				fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+				fmt.Printf("│ Address: %s\n", suiAddr)
+				fmt.Printf("│ SUI: (use explorer to check balance)\n")
+				fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+				fmt.Println()
+			}
+		}
+
+		// Polkadot
+		if chainFilter == "" || strings.EqualFold(chainFilter, "polkadot") || strings.EqualFold(chainFilter, "dot") {
+			dotAddr, _, _, err := address.GetAddress(vault.PublicKeyEdDSA, vault.HexChainCode, common.Polkadot)
+			if err == nil {
+				fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+				fmt.Printf("│ Polkadot (EdDSA)                                                │\n")
+				fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+				fmt.Printf("│ Address: %s\n", dotAddr)
+				fmt.Printf("│ DOT: (use explorer to check balance)\n")
+				fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+				fmt.Println()
+			}
+		}
+
+		// Ton
+		if chainFilter == "" || strings.EqualFold(chainFilter, "ton") {
+			tonAddr, _, _, err := address.GetAddress(vault.PublicKeyEdDSA, vault.HexChainCode, common.Ton)
+			if err == nil {
+				fmt.Printf("┌─────────────────────────────────────────────────────────────────┐\n")
+				fmt.Printf("│ TON (EdDSA)                                                     │\n")
+				fmt.Printf("├─────────────────────────────────────────────────────────────────┤\n")
+				fmt.Printf("│ Address: %s\n", tonAddr)
+				fmt.Printf("│ TON: (use explorer to check balance)\n")
+				fmt.Printf("└─────────────────────────────────────────────────────────────────┘\n")
+				fmt.Println()
+			}
+		}
+	}
+
 	return nil
+}
+
+func isEVMChain(chainFilter string) bool {
+	evmNames := []string{"ethereum", "eth", "arbitrum", "arb", "base", "polygon", "matic", "bsc", "bnb", "avalanche", "avax", "optimism", "op"}
+	filterLower := strings.ToLower(chainFilter)
+	for _, name := range evmNames {
+		if filterLower == name {
+			return true
+		}
+	}
+	return false
 }
 
 func formatBalance(balance *big.Int, decimals int) string {
