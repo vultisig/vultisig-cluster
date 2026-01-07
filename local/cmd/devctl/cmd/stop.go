@@ -46,6 +46,9 @@ With --clean flag:
 func runStop() {
 	// Stop Go services by PID files
 	pidFiles := []string{
+		"/tmp/relay.pid",
+		"/tmp/vultiserver.pid",
+		"/tmp/vultiserver-worker.pid",
 		"/tmp/verifier.pid",
 		"/tmp/worker.pid",
 		"/tmp/dca.pid",
@@ -67,10 +70,12 @@ func runStop() {
 	// Kill orphaned go run processes
 	exec.Command("pkill", "-9", "-f", "go run.*verifier").Run()
 	exec.Command("pkill", "-9", "-f", "go run.*app-recurring").Run()
+	exec.Command("pkill", "-9", "-f", "go run.*vultisig-relay").Run()
+	exec.Command("pkill", "-9", "-f", "go run.*vultiserver").Run()
 	exec.Command("pkill", "-9", "-f", "go-build.*main").Run()
 
-	// Release ports
-	ports := []string{"8080", "8082", "8089", "8181", "8183", "8184", "8185", "8186", "8187"}
+	// Release ports (including 8081 for vultiserver and 8090 for relay)
+	ports := []string{"8080", "8081", "8082", "8089", "8090", "8181", "8183", "8184", "8185", "8186", "8187"}
 	for _, port := range ports {
 		cmd := exec.Command("lsof", "-ti:"+port)
 		if out, err := cmd.Output(); err == nil {
@@ -110,12 +115,15 @@ func runStopWithReport(keepInfra bool, clean bool) error {
 	fmt.Printf("%sStopping services by PID...%s\n", colorYellow, colorReset)
 
 	pidFiles := map[string]string{
-		"/tmp/verifier.pid":       "verifier",
-		"/tmp/worker.pid":         "worker",
-		"/tmp/dca.pid":            "dca",
-		"/tmp/dca-worker.pid":     "dca-worker",
-		"/tmp/dca-scheduler.pid":  "dca-scheduler",
-		"/tmp/dca-tx-indexer.pid": "dca-tx-indexer",
+		"/tmp/relay.pid":              "relay",
+		"/tmp/vultiserver.pid":        "vultiserver",
+		"/tmp/vultiserver-worker.pid": "vultiserver-worker",
+		"/tmp/verifier.pid":           "verifier",
+		"/tmp/worker.pid":             "worker",
+		"/tmp/dca.pid":                "dca",
+		"/tmp/dca-worker.pid":         "dca-worker",
+		"/tmp/dca-scheduler.pid":      "dca-scheduler",
+		"/tmp/dca-tx-indexer.pid":     "dca-tx-indexer",
 	}
 
 	for pidFile, serviceName := range pidFiles {
@@ -139,11 +147,13 @@ func runStopWithReport(keepInfra bool, clean bool) error {
 	fmt.Printf("%sKilling orphaned processes...%s\n", colorYellow, colorReset)
 	exec.Command("pkill", "-9", "-f", "go run.*verifier").Run()
 	exec.Command("pkill", "-9", "-f", "go run.*app-recurring").Run()
+	exec.Command("pkill", "-9", "-f", "go run.*vultisig-relay").Run()
+	exec.Command("pkill", "-9", "-f", "go run.*vultiserver").Run()
 	exec.Command("pkill", "-9", "-f", "go-build.*main").Run()
 
-	// Release ports
+	// Release ports (including 8081 for vultiserver and 8090 for relay)
 	fmt.Printf("%sReleasing ports...%s\n", colorYellow, colorReset)
-	ports := []string{"8080", "8082", "8089", "8181", "8183", "8184", "8185", "8186", "8187"}
+	ports := []string{"8080", "8081", "8082", "8089", "8090", "8181", "8183", "8184", "8185", "8186", "8187"}
 	for _, port := range ports {
 		cmd := exec.Command("lsof", "-ti:" + port)
 		if out, err := cmd.Output(); err == nil && len(out) > 0 {

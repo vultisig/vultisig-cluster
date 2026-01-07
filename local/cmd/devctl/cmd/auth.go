@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spf13/cobra"
 )
 
@@ -111,7 +112,20 @@ func runAuthLogin(vaultID, password string) error {
 	nonce := hex.EncodeToString(nonceBytes)
 
 	expiryTime := time.Now().Add(5 * time.Minute)
-	message := fmt.Sprintf("%s:%d", nonce, expiryTime.Unix())
+	authMessage := map[string]string{
+		"nonce":     nonce,
+		"expiresAt": expiryTime.Format(time.RFC3339),
+	}
+	authMessageBytes, err := json.Marshal(authMessage)
+	if err != nil {
+		return fmt.Errorf("marshal auth message: %w", err)
+	}
+	message := string(authMessageBytes)
+
+	// Create EIP-191 prefixed message hash for signing
+	prefixedMessage := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
+	messageHash := crypto.Keccak256Hash([]byte(prefixedMessage))
+	messageHashHex := hex.EncodeToString(messageHash.Bytes())
 
 	fmt.Printf("Authenticating with verifier...\n")
 	fmt.Printf("  Vault: %s\n", vault.Name)
@@ -125,7 +139,7 @@ func runAuthLogin(vaultID, password string) error {
 	fmt.Println("\nPerforming TSS keysign for authentication...")
 
 	derivePath := "m/44'/60'/0'/0/0"
-	results, err := tss.Keysign(ctx, vault, []string{message}, derivePath, false, password)
+	results, err := tss.KeysignWithFastVault(ctx, vault, []string{messageHashHex}, derivePath, password)
 	if err != nil {
 		return fmt.Errorf("TSS keysign failed: %w", err)
 	}

@@ -21,13 +21,25 @@ import (
 	vgtypes "github.com/vultisig/vultisig-go/types"
 )
 
+var (
+	FastVaultServer = "https://api.vultisig.com"
+	RelayServer     = "https://api.vultisig.com/router"
+)
+
 const (
-	FastVaultServer    = "https://api.vultisig.com"
-	RelayServer        = "https://api.vultisig.com/router"
 	DefaultLocalParty  = "devctl"
 	KeygenTimeout      = 3 * time.Minute
 	MessagePollTimeout = 2 * time.Minute
 )
+
+func InitTSSConfig() {
+	config, err := LoadClusterConfig()
+	if err != nil {
+		return
+	}
+	FastVaultServer = config.GetVultiserverURL()
+	RelayServer = config.GetRelayURL()
+}
 
 type KeyShare struct {
 	PubKey   string `json:"pubkey"`
@@ -690,7 +702,7 @@ func (t *TSSService) requestFastVaultKeysign(ctx context.Context, vault *LocalVa
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := FastVaultServer + "/sign"
+	url := FastVaultServer + "/vault/sign"
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqJSON))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)

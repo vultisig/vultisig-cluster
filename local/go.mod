@@ -10,7 +10,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/vultisig/commondata v0.0.0-20251125054425-71e1e8231dd3
-	github.com/vultisig/recipes v0.0.0-20251211032528-159eb8404c0f
+	github.com/vultisig/recipes v0.0.0-20260106090536-1198eaa21228
 	github.com/vultisig/verifier v0.0.0
 	github.com/vultisig/vultiserver v0.0.0-20250825042420-c6e6ac281110
 	github.com/vultisig/vultisig-go v0.0.0-20251201083443-f9306a44b356

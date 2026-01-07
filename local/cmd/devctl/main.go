@@ -13,6 +13,9 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "devctl",
 		Short: "Vultisig development CLI for local plugin testing",
+		PersistentPreRun: func(c *cobra.Command, args []string) {
+			cmd.InitTSSConfig()
+		},
 		Long: `devctl is a CLI tool for testing Vultisig plugins locally.
 
 This tool allows you to skip the browser extension and plugin marketplace UI

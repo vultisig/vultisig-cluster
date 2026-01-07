@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -143,6 +144,114 @@ func runStart(skipDCA bool) error {
 	time.Sleep(2 * time.Second)
 	fmt.Printf("%s✓%s MinIO is ready\n", colorGreen, colorReset)
 
+	// Step 1.5: Start Relay Server (if local)
+	if config.IsLocal("relay") {
+		fmt.Println()
+		fmt.Printf("%s[1.5/8]%s Starting Relay Server...\n", colorYellow, colorReset)
+
+		relayRoot := config.Repos.Relay
+		relayConfigFile := filepath.Join(configsDir, "relay.json")
+
+		relayCmd := exec.Command("go", "run", "cmd/router/main.go", "-config", relayConfigFile)
+		relayCmd.Dir = relayRoot
+
+		relayLog, err := os.Create("/tmp/relay.log")
+		if err != nil {
+			fmt.Printf("  %s!%s Failed to create relay log: %v\n", colorYellow, colorReset, err)
+		} else {
+			relayCmd.Stdout = relayLog
+			relayCmd.Stderr = relayLog
+
+			err = relayCmd.Start()
+			if err != nil {
+				fmt.Printf("  %s!%s Failed to start relay: %v\n", colorYellow, colorReset, err)
+			} else {
+				writePIDFile("/tmp/relay.pid", relayCmd.Process.Pid)
+				fmt.Printf("  PID: %d\n", relayCmd.Process.Pid)
+				fmt.Println("  Log: /tmp/relay.log")
+
+				relayURL := fmt.Sprintf("http://localhost:%d/ping", config.Ports.Relay)
+				fmt.Println("  Waiting for Relay Server...")
+				if waitForHealthy(relayURL, 30*time.Second) {
+					fmt.Printf("  %s✓%s Relay Server ready\n", colorGreen, colorReset)
+				} else {
+					fmt.Printf("  %s!%s Relay Server failed to start - check /tmp/relay.log\n", colorYellow, colorReset)
+				}
+			}
+		}
+	}
+
+	// Step 1.6: Start Vultiserver (if local)
+	if config.IsLocal("vultiserver") {
+		fmt.Println()
+		fmt.Printf("%s[1.6/8]%s Starting Vultiserver...\n", colorYellow, colorReset)
+
+		vultiserverRoot := config.Repos.Vultiserver
+		vultiserverConfigFile := filepath.Join(configsDir, "vultiserver.json")
+
+		// Create vaults directory
+		os.MkdirAll("/tmp/vultiserver-vaults", 0755)
+
+		// Copy config to vultiserver directory (viper reads from current dir)
+		configData, err := os.ReadFile(vultiserverConfigFile)
+		if err != nil {
+			fmt.Printf("  %s!%s Failed to read vultiserver config: %v\n", colorYellow, colorReset, err)
+		} else {
+			os.WriteFile(filepath.Join(vultiserverRoot, "config.json"), configData, 0644)
+
+			vultiserverCmd := exec.Command("go", "run", "cmd/vultisigner/main.go")
+			vultiserverCmd.Dir = vultiserverRoot
+			vultiserverCmd.Env = append(os.Environ(),
+				"DYLD_LIBRARY_PATH="+dyldPath+":"+os.Getenv("DYLD_LIBRARY_PATH"),
+			)
+
+			vultiserverLog, err := os.Create("/tmp/vultiserver.log")
+			if err != nil {
+				fmt.Printf("  %s!%s Failed to create vultiserver log: %v\n", colorYellow, colorReset, err)
+			} else {
+				vultiserverCmd.Stdout = vultiserverLog
+				vultiserverCmd.Stderr = vultiserverLog
+
+				err = vultiserverCmd.Start()
+				if err != nil {
+					fmt.Printf("  %s!%s Failed to start vultiserver: %v\n", colorYellow, colorReset, err)
+				} else {
+					writePIDFile("/tmp/vultiserver.pid", vultiserverCmd.Process.Pid)
+					fmt.Printf("  PID: %d\n", vultiserverCmd.Process.Pid)
+					fmt.Println("  Log: /tmp/vultiserver.log")
+
+					// Also start vultiserver worker
+					vultiserverWorkerCmd := exec.Command("go", "run", "cmd/worker/main.go")
+					vultiserverWorkerCmd.Dir = vultiserverRoot
+					vultiserverWorkerCmd.Env = append(os.Environ(),
+						"DYLD_LIBRARY_PATH="+dyldPath+":"+os.Getenv("DYLD_LIBRARY_PATH"),
+					)
+
+					vultiserverWorkerLog, _ := os.Create("/tmp/vultiserver-worker.log")
+					vultiserverWorkerCmd.Stdout = vultiserverWorkerLog
+					vultiserverWorkerCmd.Stderr = vultiserverWorkerLog
+
+					err = vultiserverWorkerCmd.Start()
+					if err != nil {
+						fmt.Printf("  %s!%s Failed to start vultiserver worker: %v\n", colorYellow, colorReset, err)
+					} else {
+						writePIDFile("/tmp/vultiserver-worker.pid", vultiserverWorkerCmd.Process.Pid)
+						fmt.Printf("  Worker PID: %d\n", vultiserverWorkerCmd.Process.Pid)
+						fmt.Println("  Worker Log: /tmp/vultiserver-worker.log")
+					}
+
+					vultiserverURL := fmt.Sprintf("http://localhost:%d/ping", config.Ports.Vultiserver)
+					fmt.Println("  Waiting for Vultiserver API...")
+					if waitForHealthy(vultiserverURL, 60*time.Second) {
+						fmt.Printf("  %s✓%s Vultiserver ready\n", colorGreen, colorReset)
+					} else {
+						fmt.Printf("  %s!%s Vultiserver failed to start - check /tmp/vultiserver.log\n", colorYellow, colorReset)
+					}
+				}
+			}
+		}
+	}
+
 	// Step 2: Start Verifier Server
 	fmt.Println()
 	fmt.Printf("%s[2/8]%s Starting Verifier Server...\n", colorYellow, colorReset)
@@ -190,11 +299,17 @@ func runStart(skipDCA bool) error {
 	fmt.Println()
 	fmt.Printf("%s[3/8]%s Starting Verifier Worker...\n", colorYellow, colorReset)
 
+	// Generate worker config with relay URL from cluster.yaml
+	workerConfigPath := filepath.Join(verifierRoot, "devenv/config/worker-generated.json")
+	if err := generateVerifierWorkerConfig(verifierRoot, config.GetRelayURL(), workerConfigPath); err != nil {
+		return fmt.Errorf("generate worker config: %w", err)
+	}
+
 	workerCmd := exec.Command("go", "run", "cmd/worker/main.go")
 	workerCmd.Dir = verifierRoot
 	workerCmd.Env = append(os.Environ(),
 		"DYLD_LIBRARY_PATH="+dyldPath+":"+os.Getenv("DYLD_LIBRARY_PATH"),
-		"VS_WORKER_CONFIG_NAME=devenv/config/worker",
+		"VS_WORKER_CONFIG_NAME=devenv/config/worker-generated",
 	)
 
 	workerLog, _ := os.Create("/tmp/worker.log")
@@ -253,6 +368,8 @@ func runStart(skipDCA bool) error {
 		dcaWorkerCmd.Dir = dcaRoot
 		dcaWorkerCmd.Env = append(os.Environ(), dcaWorkerEnv...)
 		dcaWorkerCmd.Env = append(dcaWorkerCmd.Env, "DYLD_LIBRARY_PATH="+dyldPath+":"+os.Getenv("DYLD_LIBRARY_PATH"))
+		// Override relay URL from cluster config (production vs local)
+		dcaWorkerCmd.Env = append(dcaWorkerCmd.Env, "VAULTSERVICE_RELAY_SERVER="+config.GetRelayURL())
 
 		dcaWorkerLog, _ := os.Create("/tmp/dca-worker.log")
 		dcaWorkerCmd.Stdout = dcaWorkerLog
@@ -406,6 +523,13 @@ func printStartupSummary(elapsed time.Duration, skipDCA bool, config *ClusterCon
 	fmt.Printf("%s│%s                                                                 %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
 	fmt.Printf("%s│%s  Services Started:                                             %s│%s\n", colorCyan, colorReset, colorCyan, colorReset)
 
+	if config.IsLocal("relay") {
+		printServiceLine("Relay Server", "/tmp/relay.pid", fmt.Sprintf("%d", config.Ports.Relay))
+	}
+	if config.IsLocal("vultiserver") {
+		printServiceLine("Vultiserver API", "/tmp/vultiserver.pid", fmt.Sprintf("%d", config.Ports.Vultiserver))
+		printServiceLine("Vultiserver Worker", "/tmp/vultiserver-worker.pid", "N/A")
+	}
 	printServiceLine("Verifier API", "/tmp/verifier.pid", fmt.Sprintf("%d", config.Ports.Verifier))
 	printServiceLine("Verifier Worker", "/tmp/worker.pid", fmt.Sprintf("%d", config.Ports.VerifierWorkerMetrics))
 
@@ -445,4 +569,39 @@ func printServiceLine(name, pidFile, port string) {
 		pid = strings.TrimSpace(string(data))
 	}
 	fmt.Printf("%s│%s    %-20s PID: %-8s Port: %-6s %s│%s\n", colorCyan, colorReset, name, pid, port, colorCyan, colorReset)
+}
+
+// generateVerifierWorkerConfig reads the template worker.json and generates
+// a new config with the relay URL from cluster.yaml (single source of truth)
+func generateVerifierWorkerConfig(verifierRoot, relayURL, outputPath string) error {
+	templatePath := filepath.Join(verifierRoot, "devenv/config/worker.json")
+	data, err := os.ReadFile(templatePath)
+	if err != nil {
+		return fmt.Errorf("read template: %w", err)
+	}
+
+	// Parse JSON, update relay URL, write back
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("parse template: %w", err)
+	}
+
+	// Navigate to vault_service.relay.server and update it
+	if vs, ok := config["vault_service"].(map[string]interface{}); ok {
+		if relay, ok := vs["relay"].(map[string]interface{}); ok {
+			relay["server"] = relayURL
+		}
+	}
+
+	// Write generated config
+	output, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, output, 0644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+
+	return nil
 }

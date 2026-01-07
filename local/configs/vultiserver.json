@@ -1,0 +1,27 @@
+{
+  "server": {
+    "port": 8081,
+    "host": "0.0.0.0",
+    "vaults_file_path": "/tmp/vultiserver-vaults"
+  },
+  "redis": {
+    "host": "localhost",
+    "port": "6379",
+    "user": "",
+    "password": "vultisig",
+    "db": 0
+  },
+  "relay": {
+    "server": "http://localhost:8090"
+  },
+  "email_server": {
+    "api_key": ""
+  },
+  "block_storage": {
+    "host": "http://localhost:9000",
+    "region": "us-east-1",
+    "access_key": "minioadmin",
+    "secret": "minioadmin",
+    "bucket": "vultisig-vultiserver"
+  }
+}
